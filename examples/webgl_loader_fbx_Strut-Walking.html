@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>three.js webgl - FBX Loader</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="main.css">
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <div id="info">
+        <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - FBXLoader<br />
+        Model and animation from <a href="https://www.mixamo.com/" target="_blank" rel="noopener">Mixamo</a>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../build/three.module.js",
+                "three/addons/": "./jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import Stats from 'three/addons/libs/stats.module.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+        import { Audio, AudioListener, AudioLoader } from 'three';
+
+        let camera, scene, renderer, stats, object, mixer;
+        const clock = new THREE.Clock();
+        const manager = new THREE.LoadingManager();
+        const loader = new FBXLoader(manager);
+        const textureLoader = new THREE.TextureLoader();
+
+        init();
+
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.set(100, 200, 300);
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0xa0a0a0, 0.002);
+
+            const rgbeLoader = new RGBELoader();
+            rgbeLoader.load('models/rgbe/sunlit.hdr', function (texture) {
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                scene.background = texture;
+                scene.environment = texture;
+            });
+
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 5);
+            hemiLight.position.set(0, 200, 0);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 5);
+            dirLight.position.set(0, 200, 100);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false }));
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            const grid = new THREE.GridHelper(2000, 20, 0x000000, 0x000000);
+            grid.material.opacity = 0.2;
+            grid.material.transparent = true;
+            scene.add(grid);
+
+            loadModel();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setAnimationLoop(animate);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 100, 0);
+            controls.update();
+
+            window.addEventListener('resize', onWindowResize);
+
+            stats = new Stats();
+            container.appendChild(stats.dom);
+
+            const listener = new AudioListener();
+            camera.add(listener);
+
+            const sound = new Audio(listener);
+            const audioLoader = new AudioLoader();
+            audioLoader.load('models/rgbe/Cruise.mp3', function (buffer) {
+                sound.setBuffer(buffer);
+                sound.setLoop(true);
+                sound.setVolume(0.5);
+                sound.play();
+            });
+        }
+
+        function loadModel() {
+            loader.load('models/fbx/Strut Walking.fbx', function (group) {
+
+                if (object) {
+                    scene.remove(object);
+                }
+
+                object = group;
+
+                const baseColor = textureLoader.load('textures/color.jpg');
+                const roughnessMap = textureLoader.load('textures/roughness.jpg');
+                const metalnessMap = textureLoader.load('textures/metalness.jpg');
+
+                if (object.animations && object.animations.length) {
+                    mixer = new THREE.AnimationMixer(object);
+                    const action = mixer.clipAction(object.animations[0]);
+                    action.play();
+                }
+
+                object.traverse(function (child) {
+                    if (child.isMesh) {
+                        child.material = new THREE.MeshStandardMaterial({
+                            map: baseColor,
+                            roughnessMap: roughnessMap,
+                            metalnessMap: metalnessMap,
+                            metalness: 0.8,
+                            roughness: 0.4,
+                            transparent: true,
+                            opacity: 0.9
+                        });
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                scene.add(object);
+
+            }, undefined, function (error) {
+                console.error('Error al cargar el modelo:', error);
+            });
+        }
+
+        function animate() {
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta);
+            renderer.render(scene, camera);
+            stats.update();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
